@@ -179,3 +179,8 @@ create_excess=false;
 fshapename = "./j1713_sim.root";       // Name of your root file
 fhistoname = "Excess";
 ```
+
+License
+-------
+
+MIT: see [License.md](License.md)
