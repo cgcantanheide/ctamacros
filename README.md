@@ -16,8 +16,18 @@ The only dependency required to run these tools is ROOT.
 Installation
 --------------
 
-No installation is required to run the macros.
+No installation is required to run the macros. Just clone the git repository:
 
+```shell
+git clone https://github.com/cta-observatory/ctamacros.git
+```
+
+As soon as you have the code, you can start executing examples:
+
+```shell
+cd ctamacros
+root testCTA_v6simple.C
+```
 
 Documentation
 --------------
