@@ -35,37 +35,44 @@ How you simulate an image:
 
 ```c++
 create_excess=true;                                      // This option allows you to create a morphology shape with a given spectrum (see below for options)
-whichshape=[0 or 1 or 2 or 3];                             // Shape to create 0: Gauss, 1: Shell-type, 2: Composite, 3: Cooling
+whichshape=[0 or 1 or 2 or 3];                           // Shape to create 0: Gauss, 1: Shell-type, 2: Composite, 3: Cooling
 ```
 
 Select a position in the camera (taking into account that theta2 = (x2 + y2) < 4.5^2 )
 
+```c++
 user_Xpos=0;                            // For the ex. in the 2D histogram   -258.7;
 user_Ypos=0;                            // For the ex. in the 2D histogram -40.
+```
 
-> Select how you want to simulate your signal
- 
--- In case you select whichshape=[1 or 2]
+Select how you want to simulate your signal
+
+```c++ 
+// In case you select whichshape=[1 or 2]
 ExternalGaus=0.2;                       // define the inner and outer radius of the shell (substracting two gaussians functions)
 InternalGaus=0.18;
+```
 
+Select which type of spectral shape you want to simulate
 
-> Select which type of spectral shape you want to simulate
-
+```c++
 whichspectrum=[0 or 1];                           // 0: PL, 1: PL+Exp
 Gamma=2.7;                                        // photon spectrum 
 Ecut=1.;                                          // Exponential Cutoff if selected (whichspectrum=1)
 FluxRatio=2;                                      // Flux Ratio between the outer and inner emission region (for cases 2 and 3) Fshell/Fpoint_like or Fextended/Fpoint_like
+```
 
+If you want to read the morphology from an external file (i.e. j1713_sim.root):
 
-- If you want to read the morphology from an external file (i.e. j1713_sim.root):
-
+```c++
 create_excess=false;
 fshapename = "./j1713_sim.root";       // Name of your root file
 fhistoname = "Excess";                 // Name of your TH2D histogram
+```
 
 - To create your photon maps
 
+```c++
 printonlyex=0;                                   // Include background fluctuations [0] or not [1]
 Is_IFAEoffsetEA=true;                            // Include IFAE-Extended CTA response -> If it is set to false it will read the on-axis configurations
 configpath = "./config/";                        // Directory with your configurations. 
@@ -78,39 +85,52 @@ rangex=3;                                      // 3 degree in X axis
 rangey=3;                                      // 3 degree in Y axis
 gaus_smooth=0;				       	 // Smoothed your excess map with a gaussian with sigma : smooth
 smooth=0.06;
+```
 
 - Once you are derived your photon map you can:
 
-> Fit your Source
+Fit your Source
 
+```c++
 fitsrc=true;
+```
 
-> Obtain radial profile 
+Obtain radial profile 
 
+```c++
 radialprofile=true; 
 user_xslice=true;                           // Select X or Y axis for your profile
 user_halfwidth=10.;                       // Size of your profile
 user_range1=0;                            // if range1 and 2 are set to 0, the whole map is used
 user_range2=0;
 user_average=false;                         // Average bin content
+```
 
 - Finally you can save your results
 
-> Save your skymaps ("\Basename\_PlotsResults.root")  (\Basename\ is given as an input in the command line when executing the script)
+Save your skymaps ("\Basename\_PlotsResults.root")  (\Basename\ is given as an input in the command line when executing the script)
 
+```c++
 saveplots=true;                             // Save Plots
+```
 
-> Save the results of the fit ("\Basename\_FitResults.dat")
+Save the results of the fit ("\Basename\_FitResults.dat")
 
+```c++
 savefit=false;                              // Save Fit Results in a text file 
+```
 
-> and you can display the skymaps on the screen
+and you can display the skymaps on the screen
 
+```c++
 plotresults=true;                           // Plot results
+```
 
-> or you can obtain the significance map: 
+or you can obtain the significance map: 
 
+```c++
 Calc_Significance=true
+```
 
 2) To run the simulation:
 root
