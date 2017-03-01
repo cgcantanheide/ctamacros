@@ -4,7 +4,7 @@ ctamacros
 Project description
 --------------
 
-ROOT-based macros used by CTA PHYS group to compute sensitivity 
+ROOT-based macros used by CTA PHYS group to compute sensitivity, developed by Daniel Mazin and Emma de Oña Wilhelmi
  
 
 Dependencies
@@ -21,6 +21,9 @@ No installation is required to run the macros.
 
 Documentation
 --------------
+
+As a new project, it still lacks documentation for all functionalities. Bellow available documentation on skymap simulation.
+
 
 SkyMap Simulation Program
 -------------------------
@@ -140,7 +143,7 @@ root
 makeCTAmaps("Config - [E or B]", % Crab, Gaussian_Sigma, "Basename")
 ```
 
-i.e. ```c++ makeCTAmaps("E",1,0.1,"MySimulation) ```
+i.e. ```makeCTAmaps("E",1,0.1,"MySimulation")```
 
 3) To convert from a FITS file to root 2D histogram
 
