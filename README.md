@@ -133,12 +133,14 @@ Calc_Significance=true
 ```
 
 2) To run the simulation:
+
+```c++
 root
 .L makeCTAmaps_v0.C+
 makeCTAmaps("Config - [E or B]", % Crab, Gaussian_Sigma, "Basename")
+```
 
-i.e. makeCTAmaps("E",1,0.1,"MySimulation)
-
+i.e. ```c++ makeCTAmaps("E",1,0.1,"MySimulation) ```
 
 3) To convert from a FITS file to root 2D histogram
 
@@ -147,9 +149,11 @@ convertFITSto2D(TString file_name, TString image_name,TString outfile_name)
 
 Ex.:
 
+```c++
 root
 .L convertFITSto2D()
 convertFITSto2D("hess_rxj1713_2005.fits","cor_excess_smooth_zoom","j1713_sim.root")
+```
 
 The file hess_rxj1713_2005.fits can be also found in:
 
@@ -157,6 +161,8 @@ http://www.mpi-hd.mpg.de/hfm/HESS/pages/publications/auxiliary/auxinfo_rxj1713_p
 
 
 Remember to change the file name in your makeCTAmaps option and switch to 
+```c++
 create_excess=false;
 fshapename = "./j1713_sim.root";       // Name of your root file
 fhistoname = "Excess";
+```
