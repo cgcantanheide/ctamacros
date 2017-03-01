@@ -1,7 +1,8 @@
-# ctamacros
+ctamacros
+==============
 
 Project description
-==============
+--------------
 
 ROOT-based macros used by CTA PHYS group to compute sensitivity 
  
@@ -9,75 +10,131 @@ ROOT-based macros used by CTA PHYS group to compute sensitivity
 Dependencies
 --------------
 
-We should try to stick with just 3 dependencied: ROOT, MARS and CFITSIO.
-
-Probably these packages would be useful:
-
-```shell
-git dpkg-dev make g++ gcc binutils libx11-dev libxpm-dev libxft-dev libxext-dev cmake libcfitsio3-dev
-```
+The only dependency required to run these tools is ROOT.
 
 
 Installation
 --------------
 
-Currently, there is a test macro working: mfits/testMEventList.C
-
-It only uses CFITSIO and MARS/ROOT as dependencies. 
-
-To install CFITSIO, download the package, untar and install following these instructions:
-
-```shell
-wget http://heasarc.gsfc.nasa.gov/FTP/software/fitsio/c/cfitsio_latest.tar.gz
-tar -xzvf cfitsio_latest.tar.gz
-cd cfitsio
-mkdir build
-./configure --prefix=$PWD/build
-make
-make install
-echo "export CFITSIO=$PWD/build" >> ~/.bashrc
-source ~/.bashrc
-```
-
-Once this is done, then you may build this repository using (within the magic_dl3/ path):
-
-```shell
-./setup.sh
-cd build && make all && cd ..
-```
-
-This creates an executable in the "bin/" folder, so to execute it:
-
-```shell
-cd bin 
-./testMEventList
-cd ..
-```
-
-The output should be similar to:
-
-```shell
-!../examples/testFile.fits
-../data/Output_flute.root
-../data/20150313_05041823_Q_CrabNebula-W0.40+035.root
-A total amount of 11940 events are classified as Gammas.
-Are you serious? It works!!! :O
-```
-The generated output file is located at "examples/testFile.fits".
-
-The file already contains the 5 required columns within the EVENTS HDU extracted from the "data/20150313_05041823_Q_CrabNebula-W0.40+035.root" CrabNebula melibea file Giovanna provided, with 11940 awesome "gamma-like" events.
+No installation is required to run the macros.
 
 
 Documentation
 --------------
 
-MAGIC DL3 Working Group Wikipage:
+SkyMap Simulation Program
+-------------------------
+
+
+
+How you simulate an image:
+
+1) Edit the main script makeCTAmaps_v1.C and modify "USER SIMULATION OPTIONS"
+
+- If you want to create your own morpholgy select:
+
+create_excess=true;                                      // This option allows you to create a morphology shape with a given spectrum (see below for options)
+whichshape=[0 or 1 or 2 or 3];                             // Shape to create 0: Gauss, 1: Shell-type, 2: Composite, 3: Cooling
+
+> Select a position in the camera (taking into account that theta2 = (x2 + y2) < 4.5^2 )
+
+user_Xpos=0;                            // For the ex. in the 2D histogram   -258.7;
+user_Ypos=0;                            // For the ex. in the 2D histogram -40.
+
+> Select how you want to simulate your signal
  
-* http://wiki.magic.pic.es/index.php/MAGIC_DL3_WG
+-- In case you select whichshape=[1 or 2]
+ExternalGaus=0.2;                       // define the inner and outer radius of the shell (substracting two gaussians functions)
+InternalGaus=0.18;
 
-Git tutorials (most of them are written for Github, but the workflow is almost identical to the GitLab's one):
 
-* The [GitLab Documentation] (http://goo.gl/mAoqA2), especially the parts "Collaborate" and "Prioritize"
-* Interactive Git tutorial: https://try.github.io 
-* The infamous 'Hello World!' tutorial for creating your first git project: https://guides.github.com/activities/hello-world/
-* Official beginners guide to the Github workflow: https://guides.github.com/introduction/flow/
+> Select which type of spectral shape you want to simulate
+
+whichspectrum=[0 or 1];                           // 0: PL, 1: PL+Exp
+Gamma=2.7;                                        // photon spectrum 
+Ecut=1.;                                          // Exponential Cutoff if selected (whichspectrum=1)
+FluxRatio=2;                                      // Flux Ratio between the outer and inner emission region (for cases 2 and 3) Fshell/Fpoint_like or Fextended/Fpoint_like
+
+
+- If you want to read the morphology from an external file (i.e. j1713_sim.root):
+
+create_excess=false;
+fshapename = "./j1713_sim.root";       // Name of your root file
+fhistoname = "Excess";                 // Name of your TH2D histogram
+
+- To create your photon maps
+
+printonlyex=0;                                   // Include background fluctuations [0] or not [1]
+Is_IFAEoffsetEA=true;                            // Include IFAE-Extended CTA response -> If it is set to false it will read the on-axis configurations
+configpath = "./config/";                        // Directory with your configurations. 
+differential=true;                               // Differential or Integral Energy Bins
+Ebins=1;                                    // number of energy bins -- the energy bins are defined to be constant in logaritmic scale
+Eth=0.05;                                      // Energy threshold
+Emax=100;                                      // Maximum energy
+observationTime=50*60*60;                       // observation time in seconds
+rangex=3;                                      // 3 degree in X axis
+rangey=3;                                      // 3 degree in Y axis
+gaus_smooth=0;				       	 // Smoothed your excess map with a gaussian with sigma : smooth
+smooth=0.06;
+
+- Once you are derived your photon map you can:
+
+> Fit your Source
+
+fitsrc=true;
+
+> Obtain radial profile 
+
+radialprofile=true; 
+user_xslice=true;                           // Select X or Y axis for your profile
+user_halfwidth=10.;                       // Size of your profile
+user_range1=0;                            // if range1 and 2 are set to 0, the whole map is used
+user_range2=0;
+user_average=false;                         // Average bin content
+
+- Finally you can save your results
+
+> Save your skymaps ("\Basename\_PlotsResults.root")  (\Basename\ is given as an input in the command line when executing the script)
+
+saveplots=true;                             // Save Plots
+
+> Save the results of the fit ("\Basename\_FitResults.dat")
+
+savefit=false;                              // Save Fit Results in a text file 
+
+> and you can display the skymaps on the screen
+
+plotresults=true;                           // Plot results
+
+> or you can obtain the significance map: 
+
+Calc_Significance=true
+
+2) To run the simulation:
+root
+.L makeCTAmaps_v0.C+
+makeCTAmaps("Config - [E or B]", % Crab, Gaussian_Sigma, "Basename")
+
+i.e. makeCTAmaps("E",1,0.1,"MySimulation)
+
+
+3) To convert from a FITS file to root 2D histogram
+
+For the moment this option is only in a beta version. But you can use the script we provide called convertFITSto2D.C with astroroot:
+convertFITSto2D(TString file_name, TString image_name,TString outfile_name)
+
+Ex.:
+
+root
+.L convertFITSto2D()
+convertFITSto2D("hess_rxj1713_2005.fits","cor_excess_smooth_zoom","j1713_sim.root")
+
+The file hess_rxj1713_2005.fits can be also found in:
+
+http://www.mpi-hd.mpg.de/hfm/HESS/pages/publications/auxiliary/auxinfo_rxj1713_paper3.html
+
+
+Remember to change the file name in your makeCTAmaps option and switch to 
+create_excess=false;
+fshapename = "./j1713_sim.root";       // Name of your root file
+fhistoname = "Excess";
