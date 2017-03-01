@@ -33,10 +33,12 @@ How you simulate an image:
 
 - If you want to create your own morpholgy select:
 
+```c++
 create_excess=true;                                      // This option allows you to create a morphology shape with a given spectrum (see below for options)
 whichshape=[0 or 1 or 2 or 3];                             // Shape to create 0: Gauss, 1: Shell-type, 2: Composite, 3: Cooling
+```
 
-> Select a position in the camera (taking into account that theta2 = (x2 + y2) < 4.5^2 )
+Select a position in the camera (taking into account that theta2 = (x2 + y2) < 4.5^2 )
 
 user_Xpos=0;                            // For the ex. in the 2D histogram   -258.7;
 user_Ypos=0;                            // For the ex. in the 2D histogram -40.
