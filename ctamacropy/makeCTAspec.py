@@ -1,9 +1,9 @@
 # --- Imports ---------------------------------------------------------------- #
 from ROOT import gROOT,gSystem,TFile,TGraphAsymmErrors,TH1D,TF1,TString,TH2D, TGraph, Double, TSpline3
-import cta
+import ctamacropy
 from os.path import *
 # compile upon every load:
-gROOT.SetMacroPath("{0:s}".format(dirname(globals()['cta'].__file__)))
+gROOT.SetMacroPath("{0:s}".format(dirname(globals()['ctamacropy'].__file__)))
 gROOT.LoadMacro("makeCTAspec_v6_pyROOT.C+")
 #gSystem.AddIncludePath("{0:s}".format(dirname(globals()['cta'].__file__)))
 #gSystem.AddLinkedLibs("{0:s}".format(join(dirname(globals()['cta'].__file__),"makeCTAspec_v6_pyROOT_C.so")))
@@ -11,8 +11,9 @@ gSystem.Load("makeCTAspec_v6_pyROOT_C.so")
 from ROOT import makeCTAspec
 from ctypes import POINTER, c_float, c_double, c_int
 from array import array
-from cta.utils.spectra import *
-from cta.utils.convertRoot2Py import *
+from ctamacropy import spectra 
+from ctamacropy import convertroot2py as cr2py
+from copy import deepcopy
 import numpy as np
 # ---------------------------------------------------------------------------- #
 
@@ -23,13 +24,17 @@ class CTAObsSim(object):
 
 	Parameters
 	----------
-	irf:	str, full path to CTA IRF root file
+	irf: str
+	    full path to CTA IRF root file
 
 	kwargs
 	------
-	threshold:	float, energy threshold in TeV (default: 0.1)
-	eMin:		float, minimum energy in TeV (default: 0.05)
-	eMin:		float, maximum energy in TeV (default: 30.)
+	threshold:	float
+	    energy threshold in TeV (default: 0.1)
+	eMin:		float
+	    minimum energy in TeV (default: 0.05)
+	eMin:		float
+	    maximum energy in TeV (default: 30.)
 	"""
 	kwargs.setdefault('threshold',0.1)
 	#kwargs.setdefault('specBinningOut',100)
@@ -41,20 +46,23 @@ class CTAObsSim(object):
 	if not exists(irf):
 	    raise IOError('IRF file not found at {0:s}'.format(irf))
 
-	self.threshold		= Double(self.threshold)
-	self.irf		= irf
-	self.irfFile		= TFile(irf)
-	self.specgraph		= TGraphAsymmErrors(1)
-	self.ifluxgraph		= TGraphAsymmErrors(1)	# integral flux and its error
-	self.excessgraph	= TGraphAsymmErrors(1)	# distribution of excess events
-	self.gammaExp		= TH1D()	# distribution of excess events
-	self.bkgExp		= TH1D()	# distribution of excess events
-	self.r80VsEn		= TGraph(1)	# PSF: 80% containment radius
-	self.spline		= TSpline3()
-	self.useSpline		= False
-	self.xMin		= 1e16		# dummy, very big
-	self.xMax		= 1e-16		# dummy, very small
+	self._threshold		= Double(self.threshold)
+	self._irf		= irf
+	self._irfFile		= TFile(irf)
+	self._useSpline		= False
+	self._xMin		= 1e16		# dummy, very big
+	self._xMax		= 1e-16		# dummy, very small
+	self._spline		= TSpline3()
 
+	return
+
+    def __init_histograms(self):
+	"""Initialize the histograms for the simulation"""
+	self._specgraph		= TGraphAsymmErrors(1)
+	self._ifluxgraph	= TGraphAsymmErrors(1)	# integral flux and its error
+	self._excessgraph	= TGraphAsymmErrors(1)	# distribution of excess events
+	self._gammaExp		= TH1D()	# distribution of excess events
+	self._bkgExp		= TH1D()	# distribution of excess events
 	return
 
     def getHistIRF(self, histname, kind = "TH1D"):
@@ -92,16 +100,16 @@ class CTAObsSim(object):
 	"""
 
 	if kind == 'TH1D':
-	    return H1D2Py(self.irfFile.Get(histname))
+	    return cr2py.H1D2Py(self._irfFile.Get(histname))
 	elif kind == 'TGraph':
-	    return GraphAsymmErrors2Py(self.irfFile.Get(histname))
+	    return cr2py.GraphAsymmErrors2Py(self._irfFile.Get(histname))
 	else:
 	    raise ValueError(
 		"kind keyword must either be 'TH1D' or 'TGraph' not {0:s}".format(kind))
 	return
 
 
-    def setObsSpec(self, nbins = 30):
+    def __setObsSpec(self, nbins = 30):
 	"""
 	Initialize the observed spectrum
 
@@ -109,11 +117,15 @@ class CTAObsSim(object):
 	------
 	nbins:	int, number of bins (default : 30)
 	"""
-	self.lowEdges 		= np.logspace(np.log10(self.eMin), 
+	self._lowEdges 		= np.logspace(np.log10(self.eMin), 
 					np.log10(self.eMax), nbins + 1)
+	try:
+	    del self._spObserved
+	except AttributeError:
+	    pass
 	# expected spectrum to be 
 	# observed with CTA in dN / dE (1/TeV/cm^2/s)
-	self.spObserved		= TH1D("spObserved","",nbins, array('d', self.lowEdges))
+	self._spObserved		= TH1D("spObserved","",nbins, array('d', self._lowEdges))
 	return
 
     def setSpline(self, x, y, title = 'attenuation'):
@@ -130,10 +142,10 @@ class CTAObsSim(object):
 	------
 	title:	str, title of spline
 	"""
-	self.spline	= TSpline3(title,x,y,x.shape[0])
-	self.useSpline	= True
-	self.xMin	= np.min(x)
-	self.xMax	= np.max(x)
+	self._spline	= TSpline3(title,x,y,x.shape[0])
+	self._useSpline	= True
+	self._xMin	= np.min(x)
+	self._xMax	= np.max(x)
 	return
 
 
@@ -144,8 +156,10 @@ class CTAObsSim(object):
 
 	Parameters
 	----------
-	params:		dict, function parameters:
-			func:	str, function identifier, either 'pl','lp','bpl',or 'epl'
+	params:		dict
+			dictionary with function parameters. Has to include key
+			"func" which is a string with function identifier, either 'pl','lp','bpl',or 'epl',
+			given in spectra.py
 			The remaining kwargs depend on the chosen function.
 
 	kwargs
@@ -154,8 +168,8 @@ class CTAObsSim(object):
 	eMax:	float, maximum energy in TeV (default: 200.)
 	"""
 
-	spec, self.func 	= set_root_spec(params)
-	self.spIntr		= TF1("origSpec",spec,eMin, eMax)
+	spec, self.func 	= spectra.set_root_spec(params)
+	self._spIntr		= TF1("origSpec",spec,eMin, eMax)
 
 	return 
 
@@ -165,34 +179,47 @@ class CTAObsSim(object):
 
 	kwargs
 	------
-	rebin:		bool, 
+	rebin:		bool 
 			should rebinning be applied if the number 
 			of excess events too low? (default: False)
-	enres:		bool, 
+	enres:		bool 
 			should the energy resolution be applied to the data? 
 			(default: False) Note: Deprecated, energy resolution always applied
-	verbose:	bool, 
+	verbose:	bool 
 			print output? (default: False)
-	size_deg:	float,
+	size_deg:	float
 			radius of the emission in degrees (default: 0.01)
-	effOnTime:	float, 
+	effOnTime:	float 
 			observation time in seconds (default: 20 hours)
-	useExtended:	bool, 
+	useExtended:	bool 
 			flag between point-like and extended source 
 			(default: False, i.e. point-like)
-	useRandom:	bool, 
+	useRandom:	bool 
 			flag between BG from spectrum and fixed BG in events 
 			(default: True)
-	alpha:		float, 
+	alpha:		float 
 			fraction of exposure between OFF and ON regions (default: 0.2)
 	minEvt:		float, 
 			minimum number of events per bin (default: 7)
-	minSig:		float, 
+	minSig:		float 
 			minimum significance per bin in sigma (default: 3)
-	minBkg:		float, 
+	minBkg:		float 
 			minimum sigmal above background in per cent (default: 0.03)
-	minAeff:	float, 
+	minAeff:	float 
 			minimum effective area in cm^2 (default: 1e4)
+	seed:		int
+			random seed for the simulation
+	nbins		int
+			number of bins for observed spectrum (default: 30)
+	
+	Returns
+	-------
+	`~numpy.ndarray` It has the dimension 5 x n where n is the number of energy bins. The rows are:
+	    1. left edge of energy bins in TeV
+	    2. center of energy bin (log scale) in TeV
+	    3. right edge of energy bins in TeV
+	    4. Flux in TeV^-1 cm^-2 s^-1
+	    5. Uncertainty in Flux in TeV^-1 cm^-2 s^-1
 	"""
 	kwargs.setdefault('rebin',False)
 	kwargs.setdefault('enres',False)
@@ -201,50 +228,54 @@ class CTAObsSim(object):
 	kwargs.setdefault('effOnTime',20. * 60. * 60.)
 	kwargs.setdefault('useExtended',False)
 	kwargs.setdefault('useRandom',True)
-	kwargs.setdefault('alpha',0.2)
 	kwargs.setdefault('minEvt',7)
 	kwargs.setdefault('minSig',3.)
 	kwargs.setdefault('minBkg',0.03)
 	kwargs.setdefault('minAeff',1e4)
+	kwargs.setdefault('seed',0)
+	kwargs.setdefault('alpha',0.2)
+	kwargs.setdefault('nbins',30)
 
-	self.threshold	= makeCTAspec(self.spObserved, 	# histogram to store 
+	self.__init_histograms()
+	self.__setObsSpec(kwargs['nbins'])
+
+	self.threshold	= makeCTAspec(self._spObserved, 	# histogram to store 
                                                         # the output spectrum in dN / dE
-			    self.specgraph,		
-			    self.ifluxgraph,  # TGraphAsymmErrors integral flux graph
-			    self.excessgraph, # TGraphAsymmErrors excess events graph
-			    self.gammaExp,    # TH1D expected gamma rays, 
+			    self._specgraph,		
+			    self._ifluxgraph,  # TGraphAsymmErrors integral flux graph
+			    self._excessgraph, # TGraphAsymmErrors excess events graph
+			    self._gammaExp,    # TH1D expected gamma rays, 
 			   		      # if useRandom == True, 
 					      # they will be shuffled with Poisson statistic
-			    self.bkgExp,      # TH1D expected bkg rate, 
+			    self._bkgExp,      # TH1D expected bkg rate, 
 			   		      # if useRandom == True, 
 					      # they will be shuffled with Poisson statistic
-			    self.irf,	      # string with IRF root file
-			    self.r80VsEn,     # TGraph with 80% containment radius
-			    self.spline,      # spline with attenuation
-			    self.xMin, 	      # min energy of spline
-			    self.xMax,	      # max energy of spline
+			    self._irf,	      # string with IRF root file
+			    deepcopy(self._spline),      # spline with attenuation
+			    self._xMin, 	      # min energy of spline
+			    self._xMax,	      # max energy of spline
 			    kwargs['rebin'],		
 			    kwargs['enres'],
-			    self.useSpline,
+			    self._useSpline,
 			    kwargs['verbose'],
-			    self.spIntr,      # the intrinsic spectrum graph 
+			    self._spIntr,      # the intrinsic spectrum graph 
 			                      #(will be integrated in each bin)
 			    kwargs['effOnTime'],
 			    kwargs['size_deg'],
 			    POINTER(c_float)(c_float(self.threshold)),
-	#		    self.specBinningOut,
 			    kwargs['useExtended'],
 			    kwargs['useRandom'],
 			    kwargs['alpha'],
 			    kwargs['minEvt'],
 			    kwargs['minBkg'],
 			    kwargs['minAeff'],
-			    kwargs['minSig']
+			    kwargs['minSig'],
+			    int(kwargs['seed'])
 			 )
 
-	self.specGr	= GraphAsymmErrors2Py(self.specgraph)
-	self.spec	= H1D2Py(self.spObserved)
-	self.excess	= GraphAsymmErrors2Py(self.excessgraph,xerr = False)
-	self.gamma	= H1D2Py(self.gammaExp)
-	self.bkg	= H1D2Py(self.bkgExp)
-	return
+	self.specGr	= cr2py.GraphAsymmErrors2Py(self._specgraph)
+	self.spec	= cr2py.H1D2Py(self._spObserved)
+	self.excess	= cr2py.GraphAsymmErrors2Py(self._excessgraph,xerr = False)
+	self.gamma	= cr2py.H1D2Py(self._gammaExp)
+	self.bkg	= cr2py.H1D2Py(self._bkgExp)
+	return self.spec

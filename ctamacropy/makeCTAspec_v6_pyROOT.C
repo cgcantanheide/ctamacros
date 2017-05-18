@@ -5,6 +5,7 @@
 #include <TPad.h>
 #include <TMath.h>
 #include <TH1F.h>
+#include <TH2F.h>
 #include <TH1D.h>
 #include <TGraph.h>
 #include <TGraphAsymmErrors.h>
@@ -81,16 +82,16 @@ TF1 *bgSpec = new TF1("bgSpec","1.5e-13*pow(x,-3.2)",xMin,xMax); //in ph/cm2/s/T
 //Bool_t kUseBGFromSpec = kTRUE;
 
 //flag between point-like source and extended source 
-Bool_t kUseExtended = kTRUE;
+//Bool_t kUseExtended = kTRUE;
 
 //flag between BG from spectrum and fixed BG in events
-Bool_t kUseRandom = kTRUE;
+//Bool_t kUseRandom = kTRUE;
 
 //flag if you want to apply spill-over correction (default kFALSE)
 Bool_t kUseSpillOver = kFALSE; //obsolete
 
 double efficgampsf = 1.2; //scale factor to account for efficiency of the theta2 cut in case of an extended source
-double alpha = 0.2;  // 0.2 = 5 times better bg estimation; in Li&Ma alpha = t_on / t_off
+double alphaDefault = 0.2;  // 0.2 = 5 times better bg estimation; in Li&Ma alpha = t_on / t_off
 const double fT50 = 50.*60*60; //sec in 50 hours
 const int fIntSteps = 3;
 Double_t fFractionArea = 0.00; //0.1; //relative uncertainty of the collection area
@@ -369,12 +370,12 @@ Double_t IntegrateForTau(TSpline3 *spline, TF1 *flux, double Xlow, double Xhigh)
 
 
 //main function
-bool makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
+double makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
                  TGraphAsymmErrors *specgraph, //the same as above
                  TGraphAsymmErrors *ifluxgraph,  //store here the integral flux and its error
                  TGraphAsymmErrors *excessgraph, //distribution of excess events
-		 TH1D *gammaExp,	// expected gamma counts //**new
-		 TH1D *bkgExp,		// expected bkg counts //**new
+		 TH1D *gammaExp,	// expected gamma counts 
+		 TH1D *bkgExp,		// expected bkg counts
                  const char* filename,          //root format response file
                  TSpline3 *SplineEnVsAtt, //Spline with attenuation //**new
 		 Double_t energyMin=1e16,	//min energy of Spline //**new
@@ -386,14 +387,15 @@ bool makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
                  TF1 *spIntr=spIntrDefault,   //function of the source shape
                  Double_t effOnTime=effOnTimeDefault, // observation time
                  Double_t size_deg = sizeDegDefault, //radius of the emission in degrees
-                 TString attenFileName=attenFileNameDefault, //atten file
-                 Double_t *threshold = &threshDefault
-                 Bool_t kUseRandom=kTRUE,         //flag between BG from spectrum and fixed BG in events //**new
-		 Double_t alpha = alpha, //alpha value //**new
-		 Double_t minEvt= MINEVT, //**new
-		 Double_t minBkg= MINBKG, //**new
-		 Double_t minAeff= MINAREA, //**new
-		 Double_t minSig= MINSIG  //**new
+                 Double_t *threshold = &threshDefault,
+                 Bool_t kUseExtended=kTRUE,         //flag between point-like source and extended source
+                 Bool_t kUseRandom=kTRUE,         //flag between BG from spectrum and fixed BG in events 
+		 Double_t alpha = alphaDefault, //alpha value 
+		 Double_t minEvt= MINEVT,
+		 Double_t minBkg= MINBKG, 
+		 Double_t minAeff= MINAREA, 
+		 Double_t minSig= MINSIG,
+		 Int_t seed=0
 		 )
 {
 
@@ -409,11 +411,12 @@ bool makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
                      3.6308, 3.7568, 3.879, 3.9976, 4.1132,
                      4.2256, 4.3354, 4.4426, 4.5474, 4.65, 4.7506};  
 
-//  rnd.SetSeed(0);
-//  rnd.SetSeed(0);
+  if (kUseRandom)
+      rnd.SetSeed(seed);
   double H72 = 72./72.;  //change second number if you want to change the Hubble constant!!
 
-  cout << "entering the makeCTAspec macro ... " << endl;
+  if (kVerbose)
+      cout << "entering the makeCTAspec macro ... " << endl;
 
 //  const float photindex = PINDEX;
 
@@ -513,111 +516,70 @@ bool makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
   }
 
   //prepare for EBL attenuation
-  TSpline3 *SplineEnVsAtt =NULL;
-  double energyMin = 1e16;  //dummy very big
-  double energyMax = 1e-16;  //dummy very small
-  if (kAtten)
-  {
-    //read attenuation factors and fill them into a spline
-    cout << "reading attenuation factors from " << attenFileName << endl;
-    FILE *fp = NULL;
-    const char *cname = attenFileName;
-    if (!(fp = fopen(cname, "r")))
-    {
-      cout << "ERROR: could not open attenuation file " << cname << endl;
-      return 0;
-    }
-    char line[99];
-    TString strline;
-    Int_t k=0;
-
-    TArrayD AttenCoef(NUMPOINT);
-    TArrayD EnergyPoi(NUMPOINT);
-
-    while(1==1)
-    {
-      if (fgets(line,199,fp)==NULL)
-        break;
-      strline = line;
-
-      if (!strline.Contains("#"))
-      {
-        sscanf(line,"%lf%lf", &EnergyPoi[k], &AttenCoef[k]);
-        if (EnergyPoi.At(k) < energyMin)
-          energyMin = EnergyPoi.At(k);
-        if (EnergyPoi.At(k) > energyMax)
-          energyMax = EnergyPoi.At(k);
-
-        cout << EnergyPoi[k] << " " << AttenCoef[k] << endl;
-        k++;
-
-        if (k>=NUMPOINT)
-          break;
-      }
-    }
-
-    fclose(fp);
-
-    SplineEnVsAtt = new TSpline3("attenuation",
-        EnergyPoi.GetArray(), AttenCoef.GetArray(), k);
-
-  }
-
+  // Not needed here since it is included in funtion call!
   //energy of the intrinsic spectrum _spIntr_ is in the observer frame!!!!
 
 
   //prepare loop over the bins of the observed spectrum
   Int_t nbins = spObserved->GetNbinsX();
-  //check that the binning of the output histogram is not too small
-  //OBSOLETE
-//  Int_t nbins = spObserved->GetNbinsX() < 2 ? specBinningOut : spObserved->GetNbinsX();
-//  if (nbins==specBinningOut)
-//  {
-//    spObserved->SetBins(nbins,spObserved->GetBinLowEdge(1),spObserved->GetBinLowEdge(spObserved->GetNbinsX()+1));
-//  }
-  //check that the limits make sense: removed on 22.2.2010 since the check does not make much sense 
-//  if (spObserved->GetBinLowEdge(1)>0.1 || spObserved->GetBinLowEdge(spObserved->GetNbinsX()+1)<10)
-//      spObserved->SetBins(nbins,xMin,xMax);
 
-//  cout << " n, low, high " << spObserved->GetNbinsX() << ", " << spObserved->GetBinLowEdge(1) << ", " << spObserved->GetBinLowEdge(spObserved->GetNbinsX()+1) << endl;
-
-  cout << "filling collection areas ... " << endl;
+  //////////////////////////////////////////////////////
+  // fill the effective collection area into a tgraph //
+  // fills GraphEnVsArea
+  // fills GraphEnVsAreaTrue	- Aeff for true energy
+  // fills GraphEnVsArea80	- Aeff with 80% containment
+  //////////////////////////////////////////////////////
+  if (kVerbose)
+      cout << "filling collection areas ... " << endl;
   //fill the effective collection area into a tgraph
   TGraph *GraphEnVsArea = new TGraph(1);
   GraphEnVsArea->SetName("GraphEnVsArea");
-  cout << "  effColArea->GetNbinsX() " << effColArea->GetNbinsX() << endl;
+  if (kVerbose)
+      cout << "  effColArea->GetNbinsX() " << effColArea->GetNbinsX() << endl;
   for (int i=0;i<effColArea->GetNbinsX();i++)
   {
     //in log energy (TeV)
     GraphEnVsArea->SetPoint(i,effColArea->GetBinCenter(i+1),effColArea->GetBinContent(i+1));
-    cout << pow(10,effColArea->GetBinCenter(i+1)) << "   " << effColArea->GetBinContent(i+1) << endl;
+    if (kVerbose)
+	cout << pow(10,effColArea->GetBinCenter(i+1)) << "   " << effColArea->GetBinContent(i+1) << endl;
   }
 
   TGraph *GraphEnVsAreaTrue = new TGraph(1);
   GraphEnVsAreaTrue->SetName("GraphEnVsAreaTrue");
-  cout << " Collection area in Etrue: " <<  endl;
+  if (kVerbose)
+      cout << " Collection area in Etrue: " <<  endl;
   for (int i=0;i<effColAreaTrue->GetNbinsX();i++)
   {
     //in log energy (TeV)
     GraphEnVsAreaTrue->SetPoint(i,effColAreaTrue->GetBinCenter(i+1),effColAreaTrue->GetBinContent(i+1));
-    cout << pow(10,effColAreaTrue->GetBinCenter(i+1)) << "   " << effColAreaTrue->GetBinContent(i+1) << endl;
+    if (kVerbose)
+	cout << pow(10,effColAreaTrue->GetBinCenter(i+1)) << "   " << effColAreaTrue->GetBinContent(i+1) << endl;
   }
 
   TGraph *GraphEnVsArea80 = new TGraph(1);
   GraphEnVsArea80->SetName("GraphEnVsArea80");
-  cout << " Collection area, 80per cent containment: " <<  endl;
+  if (kVerbose)
+      cout << " Collection area, 80per cent containment: " <<  endl;
   for (int i=0;i<effColArea80->GetNbinsX();i++)
   {
     //in log energy (TeV)
     GraphEnVsArea80->SetPoint(i,effColArea80->GetBinCenter(i+1),effColArea80->GetBinContent(i+1));
-    cout << pow(10,effColArea80->GetBinCenter(i+1)) << "   " << effColArea80->GetBinContent(i+1) << endl;
+    if (kVerbose)
+	cout << pow(10,effColArea80->GetBinCenter(i+1)) << "   " << effColArea80->GetBinContent(i+1) << endl;
   }
 
-  cout << "filling background rates ... " << endl;
+  ////////////////////////////////////////////
+  // fill the background rates into a graph //
+  // fills GraphEnVsBg		- background rate vs energy
+  // fills GraphEnVsBgDeg	- background rate vs energy per sr
+  ////////////////////////////////////////////
+  if (kVerbose)
+      cout << "filling background rates ... " << endl;
   //fill the background rates into a graph
   TGraph *GraphEnVsBg = new TGraph(1);
   GraphEnVsBg->SetName("GraphEnVsBg");
-  cout << "  bgrate->GetNbinsX() " << bgrate->GetNbinsX() << endl;
+  if (kVerbose)
+      cout << "  bgrate->GetNbinsX() " << bgrate->GetNbinsX() << endl;
 
   for (int i=0;i<bgrate->GetNbinsX();i++)
   {
@@ -629,14 +591,17 @@ bool makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
     GraphEnVsBg->SetPoint(i,bgrate->GetBinCenter(i+1),bgrate->GetBinContent(i+1)/enr);
 
 //    cout << pow(10,bgrate->GetBinCenter(i+1)) << "   TeV, " << bgrate->GetBinContent(i+1) << " Hz " << endl;
-    cout << i+1 << ", " << enr << ", " << bgrate->GetBinContent(i+1)/enr << ", " << bgrate->GetBinCenter(i+1) << endl;
+    if (kVerbose)
+	cout << i+1 << ", " << enr << ", " << bgrate->GetBinContent(i+1)/enr << ", " << bgrate->GetBinCenter(i+1) << endl;
   }
 
-  cout << "filling background rates per sqdegree ... " << endl;
+  if (kVerbose)
+      cout << "filling background rates per sqdegree ... " << endl;
   //fill the background rates per deg2 into a graph
   TGraph *GraphEnVsBgDeg = new TGraph(1);
   GraphEnVsBgDeg->SetName("GraphEnVsBgDeg");
-  cout << "  bgdeg->GetNbinsX() " << bgdeg->GetNbinsX() << endl;
+  if (kVerbose)
+      cout << "  bgdeg->GetNbinsX() " << bgdeg->GetNbinsX() << endl;
 
   for (int i=0;i<bgdeg->GetNbinsX();i++)
   {
@@ -650,11 +615,13 @@ bool makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
 //    cout << i+1 << "  bgperdeg : " << enr << ", " << bgdeg->GetBinContent(i+1)/enr << ", " << bgdeg->GetBinCenter(i+1) << endl;
   }
 
-  cout << "filling angular resolution ... " << endl;
+  if (kVerbose)
+      cout << "filling angular resolution ... " << endl;
   //fill the angular resolution into a graph 
   TGraph *GraphEnVsAngRes = new TGraph(1);
   GraphEnVsAngRes->SetName("GraphEnVsAngRes");
-  cout << "  res->GetNbinsX() " << res->GetNbinsX() << endl;
+  if (kVerbose)
+      cout << "  res->GetNbinsX() " << res->GetNbinsX() << endl;
 
   for (int i=0;i<res->GetNbinsX();i++)
   {
@@ -662,16 +629,19 @@ bool makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
 //    cout << i+1 << " angres : " << res->GetBinContent(i+1) << ", " << res->GetBinCenter(i+1) << endl;
   }
 
-  cout << "filling energy resolution ... " << endl;
+  if (kVerbose)
+      cout << "filling energy resolution ... " << endl;
   //fill the angular resolution into a graph 
   TGraph *GraphEnVsEnRes = new TGraph(1);
   GraphEnVsEnRes->SetName("GraphEnVsEnRes");
-  cout << "  enres->GetNbinsX() " << enres->GetNbinsX() << endl;
+  if (kVerbose)
+      cout << "  enres->GetNbinsX() " << enres->GetNbinsX() << endl;
 
   for (int i=0;i<enres->GetNbinsX();i++)
   {
     GraphEnVsEnRes->SetPoint(i,enres->GetBinCenter(i+1),enres->GetBinContent(i+1));
-    cout << i+1 << " enres : " << enres->GetBinContent(i+1) << ", " << enres->GetBinCenter(i+1) << endl;
+    if (kVerbose)
+	cout << i+1 << " enres : " << enres->GetBinContent(i+1) << ", " << enres->GetBinCenter(i+1) << endl;
   }
 
   //needed for integral flux
@@ -695,24 +665,30 @@ bool makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
   Double_t ledgesUser[NBINS]; 
   int kk=0;
   ledges[0] = emin;
-  cout << " energy edges " << endl;
-  cout <<  " true bin 0, E=" << ledges[0] << "TeV"<< endl;
+  if (kVerbose)
+  {
+      cout << " energy edges " << endl;
+      cout <<  " true bin 0, E=" << ledges[0] << "TeV"<< endl;
+  }
   for (kk=1;kk<=nbins;kk++)
   {
     double xLedge = spObserved->GetBinLowEdge(kk);  //OK
     ledges[kk] = xLedge;
     ledgesUser[kk-1] = xLedge;
-    cout <<  " true  bin " << kk << ", E= " << ledges[kk] << "TeV, user bin" << kk-1 << ", E= " << ledgesUser[kk-1] << "TeV"<<endl;
+    if (kVerbose)
+	cout <<  " true  bin " << kk << ", E= " << ledges[kk] << "TeV, user bin" << kk-1 << ", E= " << ledgesUser[kk-1] << "TeV"<<endl;
   }
   ledges[kk] = spObserved->GetBinLowEdge(kk);
   ledgesUser[nbins] = useremax;
-  cout <<  " true  bin " << kk << ", E= " << ledges[kk] << "TeV, user bin " << nbins << ", E= " << ledgesUser[nbins] << "TeV"<< endl;
+  if (kVerbose)
+      cout <<  " true  bin " << kk << ", E= " << ledges[kk] << "TeV, user bin " << nbins << ", E= " << ledgesUser[nbins] << "TeV"<< endl;
   if (useremax < emax) 
   {
     kk++;
     ledges[kk] = emax;
   } 
-  cout <<  " true bin " << kk << ", E= " << ledges[kk] << "TeV"<< endl;
+  if (kVerbose)
+      cout <<  " true bin " << kk << ", E= " << ledges[kk] << "TeV"<< endl;
   const int nbins2 = kk;
 
   TH1D *excessIdeal = new TH1D();
@@ -720,68 +696,6 @@ bool makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
   excessIdeal->Reset();
   excessIdeal->SetDirectory(NULL);
   excessIdeal->SetName("excessIdeal");
-
-
-//  // create migration matrix
-//  TH2F *mig = new TH2F("mig","",nbins,ledgesUser,nbins2,ledges);
-//  mig->Sumw2();
-//  TF1 *weightfunc = new TF1("wf",Form("pow(x,%.2lf)",photindex),0.005,200.);
-//  weightfunc->SetNpx(10000);
-//  double eminm;
-//  double emaxm;
-//  double emeanm;
-//  double em, enunm, rnd3;
-//  TF1 *gaum = new TF1("gm","gaus",-10,10);  //energy resolution function
-//  gaum->SetNpx(10000);
-//  cout << " bulding migration matrix ... " << endl;
-//  for (int i=1;i<=nbins2;i++)
-//  {
-//    cout << " building row " << i << " ..." << endl;
-//    eminm = excessIdeal->GetBinLowEdge(i);
-//    emaxm = excessIdeal->GetBinLowEdge(i+1);
-//    emeanm = exp(log(eminm*emaxm)/2.);  // mean log 
-//    enunm = GraphEnVsEnRes->Eval(log10(emeanm)) /  log(10.); // sigma of relative energy uncertainty
-//    gaum->SetParameters(1.,0.,enunm);
-//    for (int j = 0; j < NEVT; j++)
-//    {
-//        em = weightfunc->GetRandom(eminm,emaxm); //OK 
-//        rnd3 = gaum->GetRandom();
-//        em *=  pow(10,rnd3);
-//        mig->Fill(em,emeanm);
-//    }
-//  }
-//  //normalize and multiply by Area
-//  for (int i=1;i<=nbins2;i++) //over Etrue
-//  {
-//    eminm = excessIdeal->GetBinLowEdge(i);
-//    emaxm = excessIdeal->GetBinLowEdge(i+1);
-//    emeanm = exp(log(eminm*emaxm)/2.);  // mean log 
-//    double aream = GraphEnVsArea->Eval(log10(emeanm));  // ???? (TRUE EFFECTIVE AREA)
-//    cout << Form(" MIGRAT AREA %.2e, at e = %.2e TeV", aream, emeanm) << endl;
-//    for (int j=1;j<=nbins;j++) //over Eest
-//    {
-//      double mtemp = mig->GetBinContent(j,i);
-//      if (mtemp>0.) cout << Form(" temp  %.2e, ", mtemp);
-//      mtemp *= aream/NEVT;
-////      mtemp /= NEVT;
-//      mig->SetBinContent(j,i,mtemp);
-//    }
-//    cout << endl;
-//  }
-////  gStyle->SetPalette(1);
-////  TCanvas *cmig = new TCanvas("cmig");
-////  gPad->SetLogx();
-////  gPad->SetLogy();
-////  mig->SetFillColor(4);
-////  mig->GetYaxis()->SetTitle("Etrue (TeV)");
-////  mig->GetXaxis()->SetTitle("Erec (TeV)");
-////  mig->DrawClone("box");
-////  gPad->SetLogx();
-////  gPad->SetLogy();
-
-  // for the assumed TF1 spectrum dN/dE and observation time T,
-  // calculate the weights in every Etrue bin as
-  // Integral(dN/dE dE) * Aeff * T
 
   //first normalize the Etrue lines to 1
   double sume = 0.;
@@ -805,7 +719,8 @@ bool makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
   double meane=0;
   double atten3 = 1.;
 //  for (int j=1;j<=migmat->GetNbinsY();j++) //rows (Etrue)
-  cout << endl << Form("j, energy, Flux, atten, time, effarea, expected excess") << endl;
+  if (kVerbose)
+      cout << endl << Form("j, energy, Flux, atten, time, effarea, expected excess") << endl;
   for (int j=1;j<=migmat->GetYaxis()->GetNbins();j++) //rows (Etrue)
   {
     lowe = migmat->GetYaxis()->GetBinLowEdge(j);
@@ -831,10 +746,13 @@ bool makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
     fintegral = spIntr->Integral(lowe,highe) * atten3 * effOnTime * areaef; //ideal number of gammas in this Etrue bin
     fintegral *=1e4; //area is in m2 (m2 -> cm2)
 //    cout << " Ntrue: " << fintegral << endl;
-    if (kAtten)
-      cout << Form("%d %.2e %.2e %.2e %.2e %.0lf %lf %lf",j,pow(10,meane),spIntr->Integral(lowe,highe), atten3, SplineEnVsAtt->Eval(pow(10,meane)), effOnTime, areaef, fintegral) << endl;
-    else
-      cout << Form("%d %.2e %.2e %.2e %.0lf %lf %lf",j,pow(10,meane),spIntr->Integral(lowe,highe), atten3, effOnTime, areaef, fintegral) << endl;
+    if (kVerbose)
+    {
+	if (kAtten)
+	  cout << Form("%d %.2e %.2e %.2e %.2e %.0lf %lf %lf",j,pow(10,meane),spIntr->Integral(lowe,highe), atten3, SplineEnVsAtt->Eval(pow(10,meane)), effOnTime, areaef, fintegral) << endl;
+	else
+	  cout << Form("%d %.2e %.2e %.2e %.0lf %lf %lf",j,pow(10,meane),spIntr->Integral(lowe,highe), atten3, effOnTime, areaef, fintegral) << endl;
+    }
     for (int i=1;i<=migmat->GetNbinsX();i++) //columns (Eest)
       {
 //        cout << "  " << i << " VM=" << migmat->GetBinContent(i,j) << " INT=" << fintegral;
@@ -846,17 +764,22 @@ bool makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
 
   // we now rebin the migration matrix in Etrue and in Eest
   // the user specified binning is:
-  cout << endl << "User specified binning is: " << endl;
-  cout << Form("\tLowEdge(TeV)\tUpperEdge(TeV)") << endl; 
+  if (kVerbose)
+  {
+      cout << endl << "User specified binning is: " << endl;
+      cout << Form("\tLowEdge(TeV)\tUpperEdge(TeV)") << endl; 
+  }
   for (int i=1; i<=spObserved->GetNbinsX(); i++)
-   cout << Form("%d\t%.2e\t%.2e",i, spObserved->GetBinLowEdge(i), spObserved->GetBinLowEdge(i+1)) << endl; 
+      if (kVerbose)
+	  cout << Form("%d\t%.2e\t%.2e",i, spObserved->GetBinLowEdge(i), spObserved->GetBinLowEdge(i+1)) << endl; 
 
   Double_t ledgesCoarse[NBINS]; 
   for  (int i=1; i<=nbins; i++)
   {
     double lelim = log10(spObserved->GetBinLowEdge(i));
     double uelim = log10(spObserved->GetBinLowEdge(i+1));
-    cout << "i=" << i  << " " << lelim << " :" ; 
+    if (kVerbose)
+	cout << "i=" << i  << " " << lelim << " :" ; 
     for (int j=1; j<=migmat->GetNbinsX();j++)
     {
 //       cout << "  " << migmat->GetXaxis()->GetBinLowEdge(j);
@@ -864,19 +787,22 @@ bool makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
           lelim < migmat->GetXaxis()->GetBinLowEdge(j+1)) //found low edge
       {
         ledgesCoarse[i-1] = pow(10,migmat->GetXaxis()->GetBinLowEdge(j));
-        cout << " new: " << ledgesCoarse[i-1] << " :" << endl;; 
+        if (kVerbose)
+	    cout << " new: " << ledgesCoarse[i-1] << " :" << endl;; 
         break;
       }
     }
     if (i==nbins) //last bin
     {
-       cout << endl << "ulim  " << uelim << endl;;
+      if (kVerbose)
+	   cout << endl << "ulim  " << uelim << endl;;
       for (int jk=1; jk<=migmat->GetNbinsX();jk++)
       {
         if (uelim <= migmat->GetXaxis()->GetBinLowEdge(jk)) //upperedge found
         {
           ledgesCoarse[i] = pow(10,migmat->GetXaxis()->GetBinLowEdge(jk));
-          cout <<  " last  " <<  ledgesCoarse[i] << endl;;
+	  if (kVerbose)
+	      cout <<  " last  " <<  ledgesCoarse[i] << endl;;
           break;
         }
       }
@@ -893,12 +819,15 @@ bool makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
   ledgesCoarseTRUE[nbinsCoarseTrue]=pow(10,migmat->GetYaxis()->GetBinLowEdge(migmat->GetNbinsY()+1));
    
 
-  cout << " Coarse True: 0 " << ledgesCoarseTRUE[0] << endl;
+  if (kVerbose)
+      cout << " Coarse True: 0 " << ledgesCoarseTRUE[0] << endl;
   for  (int i=0; i<=nbins; i++)
   {
-    cout << "Coarse True  " << i+1 << " " << ledgesCoarseTRUE[i+1] << " " <<  ledgesCoarse[i] <<  " " << spObserved->GetBinLowEdge(i+1) << endl;
+    if (kVerbose)
+	cout << "Coarse True  " << i+1 << " " << ledgesCoarseTRUE[i+1] << " " <<  ledgesCoarse[i] <<  " " << spObserved->GetBinLowEdge(i+1) << endl;
   }
-  cout << " Coarse True: last " << ledgesCoarseTRUE[nbinsCoarseTrue] << endl;
+  if (kVerbose)
+      cout << " Coarse True: last " << ledgesCoarseTRUE[nbinsCoarseTrue] << endl;
 
   //define coarse response matrix
   TH2F* migmatCoarse = new TH2F("migmatCoarse","",nbins,ledgesCoarse,nbinsCoarseTrue,ledgesCoarseTRUE);
@@ -921,13 +850,16 @@ bool makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
   //print the coarse matrix
   for (int j=1; j<=migmatCoarse->GetNbinsY();j++) //over etrue
   {
-    cout << endl << " line " << j ;
+    if (kVerbose)
+	cout << endl << " line " << j ;
     for (int i=1; i<=migmatCoarse->GetNbinsX();i++) //over erec
     {
-      cout << "  " << migmatCoarse->GetBinContent(i,j);
+      if (kVerbose)
+	  cout << "  " << migmatCoarse->GetBinContent(i,j);
     }
   }
-  cout << endl;
+  if (kVerbose)
+      cout << endl;
 
   // create TH1 with ideal number of gamma events in Etrue
   TH1D *gammaIdeal = migmatCoarse->ProjectionY("gammaIdeal"); //ideal in Etrue
@@ -936,18 +868,22 @@ bool makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
   TH1D *spillOver = new TH1D(*gammaIdealRec);
   spillOver->SetName("spillOver");
   spillOver->Reset();
-  cout << " ************************************************" << endl;
-  cout << " ************************************************" << endl;
-  cout << " ************************************************" << endl;
-  cout << " ************************************************" << endl;
-  cout << " SPILL OVER (NOT USED) " << endl;
+  if (kVerbose)
+  {
+      cout << " ************************************************" << endl;
+      cout << " ************************************************" << endl;
+      cout << " ************************************************" << endl;
+      cout << " ************************************************" << endl;
+      cout << " SPILL OVER (NOT USED) " << endl;
+  }
   for (int i=1; i<=spillOver->GetNbinsX(); i++)
   {
     double v1 = gammaIdeal->GetBinContent(i+1);
     double v2 = gammaIdealRec->GetBinContent(i);
     if (v2>0. && v1>0.)
     {
-      cout << " SPILL OVER " << i << " " << v1/v2 << endl;
+      if (kVerbose)
+	  cout << " SPILL OVER " << i << " " << v1/v2 << endl;
       spillOver->SetBinContent(i,v1/v2);  // true / reconstructed
     }
   }
@@ -989,22 +925,28 @@ bool makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
   }
 
   //print the coarse shuffled matrix
-  for (int j=1; j<=migmatCoarseShuffled->GetNbinsY();j++) //over etrue
+  if (kVerbose)
   {
-    cout << endl << " shuffled line " << j ;
-    for (int i=1; i<=migmatCoarseShuffled->GetNbinsX();i++) //over erec
-    {
-      cout << "  " << migmatCoarseShuffled->GetBinContent(i,j);
-    }
+      for (int j=1; j<=migmatCoarseShuffled->GetNbinsY();j++) //over etrue
+      {
+	cout << endl << " shuffled line " << j ;
+	for (int i=1; i<=migmatCoarseShuffled->GetNbinsX();i++) //over erec
+	{
+	  cout << "  " << migmatCoarseShuffled->GetBinContent(i,j);
+	}
+      }
+      cout << endl;
   }
-  cout << endl;
 
   //create distribution of expected excess events
   TH1D *gammaExpected = migmatCoarseShuffled->ProjectionX("gammaExpected");
 
   //second loop
-  cout << endl << "entering the second loop over " << nbins << " energy bins of the spectrum ... " << endl;
-  cout << "i, energy, psf, sol_ang, idealExcess, excess, excess/idealExcess, BG, Flux, sigma " << endl;;
+  if (kVerbose)
+  {
+      cout << endl << "entering the second loop over " << nbins << " energy bins of the spectrum ... " << endl;
+      cout << "i, energy, psf, sol_ang, idealExcess, excess, excess/idealExcess, BG, Flux, sigma " << endl;;
+  }
   int ik = 0;
   double fFlux=0.;
   double fFluxReb=0.;
@@ -1017,22 +959,34 @@ bool makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
   bool toBeRebinned = kFALSE;
   double EnergyLowBound=0.;
   bool kPointSet = kFALSE;
+  bkgExp->Reset();
+  bkgExp->SetBins(nbins,ledgesUser);
+  gammaExp->Reset();
+  gammaExp->SetBins(nbins,ledgesUser);
+  for (int i=0;i<nbins;i++)
+  {
+    gammaExp->SetBinContent(i+1,gammaExpected->GetBinContent(i+1));
+  }
+
   for (int i=0;i<nbins;i++)
   {
     double xLedge = spObserved->GetBinLowEdge(i+1);  //OK
     double xHedge = spObserved->GetBinLowEdge(i+2);  //OK
     double de = spObserved->GetBinWidth(i+1);
     double energy = exp(log(xLedge*xHedge)/2.);  // mean log 
-    cout << i << "  " << energy << "  ";
+    if (kVerbose)
+	cout << i << "  " << energy << "  ";
 
     fExcess = TMath::Nint(gammaExpected->GetBinContent(i+1)); //convert to integer
 
     double psf = GraphEnVsAngRes->Eval(log10(energy)); 
-    cout << " " << psf;
+    if (kVerbose)
+	cout << " " << psf;
 //    double solid_angle = TMath::Pi()*(pow(1.6*psf,2)+pow(size_deg,2)); //for Jim's toy
     //Refine the formula??
     double solid_angle = TMath::Pi()*(pow(psf,2)+pow(size_deg,2));  //because we use r80
-    cout << "  " << solid_angle;
+    if (kVerbose)
+	cout << "  " << solid_angle;
     
     //get BG for the energy bin, point-like
     double fBGpoint = effOnTime*IntegrateFromGraphLog(GraphEnVsBg,log10(xLedge),log10(xHedge)); 
@@ -1044,11 +998,18 @@ bool makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
     //calculate expected BG 
     double fBGeff = fBG / alpha;
     //shuffle fBG in background region
-    if (kUseRandom) fBGeff = rnd.PoissonD(fBGeff); //integer
-    fBGeff = TMath::Nint(fBGeff); //to be sure
+    bkgExp->SetBinContent(i+1,fBG);
+    if (kUseRandom)
+    {
+	fBGeff = rnd.PoissonD(fBGeff); //integer
+	fBGeff = TMath::Nint(fBGeff); //to be sure // only needed if random used
+    }
     //shuffle fBG in ON region
-    if (kUseRandom) fBG = rnd2.PoissonD(fBG); //integer
-    fBG = TMath::Nint(fBG); //to be sure
+    if (kUseRandom) 
+    {
+	fBG = rnd2.PoissonD(fBG); //integer
+	fBG = TMath::Nint(fBG); //to be sure // only needed if random used
+    }
 
     fON = fExcess + fBG;   //integer
     fExcess = fON - fBGeff*alpha;  //this is the real excess
@@ -1100,8 +1061,9 @@ bool makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
     double AreaEff = GraphEnVsArea->Eval(log10(energy));  // needed to judge if the excess can be trusted only (if Aeff too small then dont)
     if (fExcess <= 0.)
     {
-      cout << ", fExcess is only " << fExcess << " skipping the bin ... " << endl;
-      if (AreaEff<MINAREA || !kRebin) //eff area is still too low or no rebinning wished
+      if (kVerbose)
+	  cout << ", fExcess is only " << fExcess << " skipping the bin ... " << endl;
+      if (AreaEff<minAeff|| !kRebin) //eff area is still too low or no rebinning wished
       {
         toBeRebinned = kFALSE;
         continue;
@@ -1130,7 +1092,8 @@ bool makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
     double fFluxErN = sqrt((fFlux*fFlux/fExcess/fExcess)*fExcessErrorN*fExcessErrorN + relareaer);
     if (fFluxEr==0.)
     {
-      cout << ", fFluxEr is only " << fFluxEr << " skipping the bin ... " << endl;
+      if (kVerbose)
+	  cout << ", fFluxEr is only " << fFluxEr << " skipping the bin ... " << endl;
       if (kRebin && kPointSet) 
       {
         if (!toBeRebinned) EnergyLowBound = xLedge;
@@ -1142,7 +1105,8 @@ bool makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
       continue;
     }
 
-    cout << "  " << excessideal << " " << fExcess << "  " << fExcess/excessideal << " " << fBGeff*alpha << "  " <<  fFlux << " " << fFlux/fFluxEr << " ";
+    if (kVerbose)
+	cout << "  " << excessideal << " " << fExcess << "  " << fExcess/excessideal << " " << fBGeff*alpha << "  " <<  fFlux << " " << fFlux/fFluxEr << " ";
 
     //make bgeff positive in order to avoid problems with divisions by 0
     fBGeff = fBGeff > 0. ? fBGeff : SMALL; 
@@ -1151,22 +1115,23 @@ bool makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
     // if it is more than 3 sigma 
     // and number of excess events are greater than 7
     // and excess is bigger than 3% of the BG
-    if (AreaEff<MINAREA) //the area is still too low, no rebinning
+    if (AreaEff<minAeff) //the area is still too low, no rebinning
     {
-      if (fExcess/(fBGeff*alpha) < MINBKG || 
-          (fFlux/fFluxEr<MINSIG) ||
-          fExcess < MINEVT) 
+      if (fExcess/(fBGeff*alpha) < minBkg || 
+          (fFlux/fFluxEr<minSig) ||
+          fExcess < minEvt) 
       {
-        cout << " the point did not survive the cuts, and area too small ... " << endl;
+        if (kVerbose)
+	    cout << " the point did not survive the cuts, and area too small ... " << endl;
         toBeRebinned = kFALSE;
         continue;
       }
     }
     else //area is big enough
     {
-      if (fExcess < MINEVT ||             //TRY TO REBIN
-            (fFlux/fFluxEr<MINSIG) || 
-            fExcess/(fBGeff*alpha) < MINBKG )
+      if (fExcess < minEvt ||             //TRY TO REBIN
+            (fFlux/fFluxEr<minSig) || 
+            fExcess/(fBGeff*alpha) < minBkg)
       {
         if (kRebin && kPointSet)
         {
@@ -1177,11 +1142,13 @@ bool makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
           fFluxRebErP += fFluxErP*fFluxErP*de*de;
           fFluxRebErN += fFluxErN*fFluxErN*de*de;
           //      fFlux=0.;
-          cout << " the point did not survive the cuts ... ";
+	  if (kVerbose)
+	      cout << " the point did not survive the cuts ... ";
         }
         else
         {
-          cout << " the point did not survive the cuts ... " << endl;
+	  if (kVerbose)
+	      cout << " the point did not survive the cuts ... " << endl;
           continue;
         }
       }
@@ -1195,17 +1162,23 @@ bool makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
       fFluxErP = sqrt(fFluxRebErP) / (xHedge-EnergyLowBound);
       fFluxErN = sqrt(fFluxRebErN) / (xHedge-EnergyLowBound);
       fExcessReb += fExcess;
-      if (fFlux/fFluxEr<MINSIG || 
-          fExcessReb < MINEVT || 
-          fExcessReb/(fBGeff*alpha) < MINBKG)
+      if (fFlux/fFluxEr<minSig|| 
+          fExcessReb < minEvt|| 
+          fExcessReb/(fBGeff*alpha) < minBkg)
       {
-        cout << endl << "\t the rebinned point did not survive the cuts:  ";
-        cout << Form ("%lf--%lf: %e, %e, %lf, %lf",EnergyLowBound,xHedge,fFlux,fFluxEr,fFlux/fFluxEr,fExcessReb);
+        if (kVerbose)
+	{
+	    cout << endl << "\t the rebinned point did not survive the cuts:  ";
+	    cout << Form ("%lf--%lf: %e, %e, %lf, %lf",EnergyLowBound,xHedge,fFlux,fFluxEr,fFlux/fFluxEr,fExcessReb);
+	}
       }
       else
       {
-        cout << endl << "\t REBINNING SUCCESSFUL! ... : ";
-        cout << Form ("in E = %lf--%lf: %e, %e, %lf, %lf",EnergyLowBound,xHedge,fFlux,fFluxEr,fFlux/fFluxEr,fExcessReb);
+        if (kVerbose)
+	{
+	    cout << endl << "\t REBINNING SUCCESSFUL! ... : ";
+	    cout << Form ("in E = %lf--%lf: %e, %e, %lf, %lf",EnergyLowBound,xHedge,fFlux,fFluxEr,fFlux/fFluxEr,fExcessReb);
+	}
         energy = exp(log(EnergyLowBound*xHedge)/2.);  // mean log 
         xLedge=EnergyLowBound;
         toBeRebinned = kFALSE;
@@ -1220,20 +1193,23 @@ bool makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
 
     if (toBeRebinned)
     {
-      cout << endl;
+      if (kVerbose)
+	  cout << endl;
       continue;
     }
 
     specgraph->SetPoint(ik,energy,fFlux);
     if (fON < GAUSL || fBGeff < GAUSL) {
       specgraph->SetPointError(ik,energy-xLedge,xHedge-energy,fFluxErN,fFluxErP);
-      cout << " USING ASYMMETRIC ERRORBARS ";
+      if (kVerbose)
+	  cout << " USING ASYMMETRIC ERRORBARS ";
     }
     else
       specgraph->SetPointError(ik,energy-xLedge,xHedge-energy,fFluxEr,fFluxEr);
 
     ik++;
-    cout << endl;
+    if (kVerbose)
+	cout << endl;
 
     if (ik>=minPointNotRebinned) 
       kPointSet = kTRUE;
@@ -1249,7 +1225,11 @@ bool makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
   double FluxIdeal = spIntr->Integral(useremin,useremax);
   double ONtot = ExcessTot + BGtot*alpha;
 
-//  double ExcessTotEr = SignificanceLiMa(ONtot,BGtot,alpha);
+  double signif = SignificanceLiMa(ONtot,BGtot,alpha);
+
+  if (kVerbose)
+      cout << Form("Total Li&Ma significance = %.3e", signif);
+
   double bkgerrpos; 
   double bkgerrneg; 
   double onerrpos; 
@@ -1289,8 +1269,11 @@ bool makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
   ifluxgraph->SetPointEYlow(0,FluxIrealEN);
   ifluxgraph->SetPointEYhigh(0,FluxIrealEP);
 
-  cout << endl << "    Integral flux "<< endl; 
-  cout << Form("FluxReal = %.2e, FluxIdeal = %.2e ", FluxIreal, FluxIdeal) << endl << endl;
+  if (kVerbose)
+  {
+      cout << endl << "    Integral flux "<< endl; 
+      cout << Form("FluxReal = %.2e, FluxIdeal = %.2e ", FluxIreal, FluxIdeal) << endl << endl;
+  }
 
   //rebin the histogram
   double x,y, exl, eyl, eyh;
@@ -1321,7 +1304,8 @@ bool makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
   // calculate energy threshold from gammaIdeal
   TH1D *gammaIdeal2 = migmat->ProjectionY("gammaIdeal2"); //ideal in Etrue
   (*threshold) = pow(10,gammaIdeal2->GetBinCenter(gammaIdeal2->GetMaximumBin()));
-  cout << " THRESHOLD is "  << *threshold  << " TeV "<< endl;
+  if (kVerbose)
+      cout << " THRESHOLD is "  << *threshold  << " TeV "<< endl;
   
 
 
@@ -1359,6 +1343,6 @@ bool makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
 //  delete gammaIdealRec;
 //  delete gammaIdeal2;
 
-  return 1;
+  return *threshold;
 }
 

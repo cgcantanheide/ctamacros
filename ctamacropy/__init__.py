@@ -1,1 +1,1 @@
-__all__ = ['makeCTAspec']
+__all__ = ['makeCTAspec','convertroot2py','spectra']

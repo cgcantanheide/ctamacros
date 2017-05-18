@@ -12,6 +12,8 @@ Dependencies
 
 The only dependency required to run these tools is ROOT.
 
+If you would like to use the python implementation, you will need python with numpy and possibly the ebltable module.
+
 
 Installation
 --------------
@@ -27,6 +29,13 @@ As soon as you have the code, you can start executing examples:
 ```shell
 cd ctamacros
 root testCTA_v6simple.C
+```
+
+To use the python implementation, add the ctamacro path to your PYTHONHOME environment variable. 
+For instance in bash, type
+
+```shell
+export PYTHONPATH=".:path/to/ctamacros:$PYTHONPATH"
 ```
 
 Documentation
@@ -179,6 +188,10 @@ create_excess=false;
 fshapename = "./j1713_sim.root";       // Name of your root file
 fhistoname = "Excess";
 ```
+
+Using ctamacros in python
+-------------------------
+See the detailed ipython/jupyter notebook example_ctamacro_for_python.ipynb for a simple usage example.
 
 License
 -------
