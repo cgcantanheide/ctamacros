@@ -459,12 +459,21 @@ bool makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
     return 0;
   }
 
-//  TH1* res = (TH1*)f->Get("AngRes");
   TH1* res = NULL;
   if (!(res = (TH1*)f->Get("AngRes80")))
   {
     cout << "ERROR: did not find histogram AngRes80 in the provided root performance file " << filename << endl;
-    return 0;
+    cout << "No Off-axis performance available? Trying to use only On-Axis..." << endl;
+    if (!(res = (TH1*)f->Get("AngRes")))
+    {
+	cout << "ERROR: did not find histogram AngRes either in the provided root performance file " << filename << endl;
+	return 0;
+    }
+    else
+    {
+	kUseExtended = kFALSE;
+	cout << "... worked" << endl;
+    }
   }
   TH1* bgdeg = NULL;
   if (!( bgdeg = (TH1*)f->Get("BGRatePerSqDeg")))
