@@ -8,6 +8,7 @@
 #include <TH2F.h>
 #include <TH1D.h>
 #include <TGraph.h>
+#include <TVector.h>
 #include <TGraphAsymmErrors.h>
 #include <TF1.h>
 #include <TString.h>
@@ -62,7 +63,6 @@
 TF1 *spIntrDefault = new TF1("spIntr","(6.0e-11)*pow((x/.3),(-2.31+(-0.26*TMath::Log10(x/.3))))",0.01,100.);  //Crab Nebula (MAGIC paper)
 Double_t zSourceDefault = 0.2;
 TString attenFileNameDefault = "exptau_z0.030_modelFranceschini.dat";
-Double_t threshDefault = 0.1;
 //Int_t specBinningOutDefault = 100;
 
 double effOnTimeDefault = 20.*60*60; //20 hours //The number is in seconds
@@ -370,7 +370,7 @@ Double_t IntegrateForTau(TSpline3 *spline, TF1 *flux, double Xlow, double Xhigh)
 
 
 //main function
-double makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
+bool makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
                  TGraphAsymmErrors *specgraph, //the same as above
                  TGraphAsymmErrors *ifluxgraph,  //store here the integral flux and its error
                  TGraphAsymmErrors *excessgraph, //distribution of excess events
@@ -378,6 +378,7 @@ double makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
 		 TH1D *bkgExp,		// expected bkg counts
                  const char* filename,          //root format response file
                  TSpline3 *SplineEnVsAtt, //Spline with attenuation //**new
+		 TVector *Stats,		// Vector to save some additional numbers
 		 Double_t energyMin=1e16,	//min energy of Spline //**new
 		 Double_t energyMax=1e-16,	//max energy of Spline //**new
                  Bool_t kRebin=kFALSE,         //should rebinning be applied if the number of excess events too low?
@@ -387,7 +388,6 @@ double makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
                  TF1 *spIntr=spIntrDefault,   //function of the source shape
                  Double_t effOnTime=effOnTimeDefault, // observation time
                  Double_t size_deg = sizeDegDefault, //radius of the emission in degrees
-                 Double_t *threshold = &threshDefault,
                  Bool_t kUseExtended=kTRUE,         //flag between point-like source and extended source
                  Bool_t kUseRandom=kTRUE,         //flag between BG from spectrum and fixed BG in events 
 		 Double_t alpha = alphaDefault, //alpha value 
@@ -395,7 +395,8 @@ double makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
 		 Double_t minBkg= MINBKG, 
 		 Double_t minAeff= MINAREA, 
 		 Double_t minSig= MINSIG,
-		 Int_t seed=0
+		 Int_t seedOn=0,
+		 Int_t seedOff=0
 		 )
 {
 
@@ -412,7 +413,8 @@ double makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
                      4.2256, 4.3354, 4.4426, 4.5474, 4.65, 4.7506};  
 
   if (kUseRandom)
-      rnd.SetSeed(seed);
+      rnd.SetSeed(seedOn);
+      rnd2.SetSeed(seedOff);
   double H72 = 72./72.;  //change second number if you want to change the Hubble constant!!
 
   if (kVerbose)
@@ -1225,11 +1227,6 @@ double makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
   double FluxIdeal = spIntr->Integral(useremin,useremax);
   double ONtot = ExcessTot + BGtot*alpha;
 
-  double signif = SignificanceLiMa(ONtot,BGtot,alpha);
-
-  if (kVerbose)
-      cout << Form("Total Li&Ma significance = %.3e", signif);
-
   double bkgerrpos; 
   double bkgerrneg; 
   double onerrpos; 
@@ -1302,10 +1299,17 @@ double makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
 
 
   // calculate energy threshold from gammaIdeal
-  TH1D *gammaIdeal2 = migmat->ProjectionY("gammaIdeal2"); //ideal in Etrue
-  (*threshold) = pow(10,gammaIdeal2->GetBinCenter(gammaIdeal2->GetMaximumBin()));
+  ((*Stats))[0] = SignificanceLiMa(ONtot,BGtot,alpha);
+
   if (kVerbose)
-      cout << " THRESHOLD is "  << *threshold  << " TeV "<< endl;
+      cout << Form("Total Li&Ma significance = %.3e", ((*Stats))[0]);
+
+  TH1D *gammaIdeal2 = migmat->ProjectionY("gammaIdeal2"); //ideal in Etrue
+  ((*Stats))[1] = pow(10,gammaIdeal2->GetBinCenter(gammaIdeal2->GetMaximumBin()));
+  //Stats->Print();
+
+  if (kVerbose)
+      cout << " THRESHOLD is "  << ((*Stats))[1]  << " TeV "<< endl;
   
 
 
@@ -1343,6 +1347,6 @@ double makeCTAspec(TH1D *spObserved, //expected spectrum to be observed with CTA
 //  delete gammaIdealRec;
 //  delete gammaIdeal2;
 
-  return *threshold;
+  return 1;
 }
 

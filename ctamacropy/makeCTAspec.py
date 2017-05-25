@@ -1,5 +1,5 @@
 # --- Imports ---------------------------------------------------------------- #
-from ROOT import gROOT,gSystem,TFile,TGraphAsymmErrors,TH1D,TF1,TString,TH2D, TGraph, Double, TSpline3
+from ROOT import gROOT,gSystem,TFile,TGraphAsymmErrors,TH1D,TF1,TString,TH2D, TGraph, Double, TSpline3, TVector
 import ctamacropy
 from os.path import *
 # compile upon every load:
@@ -121,11 +121,14 @@ class CTAObsSim(object):
 					np.log10(self.eMax), nbins + 1)
 	try:
 	    del self._spObserved
+	    del self._stats
 	except AttributeError:
 	    pass
 	# expected spectrum to be 
 	# observed with CTA in dN / dE (1/TeV/cm^2/s)
 	self._spObserved		= TH1D("spObserved","",nbins, array('d', self._lowEdges))
+	# Vector for additional stats calculated in Root script
+	self._stats = TVector(3)
 	return
 
     def setSpline(self, x, y, title = 'attenuation'):
@@ -232,14 +235,19 @@ class CTAObsSim(object):
 	kwargs.setdefault('minSig',3.)
 	kwargs.setdefault('minBkg',0.03)
 	kwargs.setdefault('minAeff',1e4)
-	kwargs.setdefault('seed',0)
+	kwargs.setdefault('seedOn',0)
+	kwargs.setdefault('seedOff',0)
 	kwargs.setdefault('alpha',0.2)
 	kwargs.setdefault('nbins',30)
+	if kwargs['nbins'] > 150:
+	    print "Maximum number of bins is 150, setting to 150"
+	    kwargs['nbins'] = 150
+
 
 	self.__init_histograms()
 	self.__setObsSpec(kwargs['nbins'])
 
-	self.threshold	= makeCTAspec(self._spObserved, 	# histogram to store 
+	success = makeCTAspec(self._spObserved, 	# histogram to store 
                                                         # the output spectrum in dN / dE
 			    self._specgraph,		
 			    self._ifluxgraph,  # TGraphAsymmErrors integral flux graph
@@ -252,6 +260,7 @@ class CTAObsSim(object):
 					      # they will be shuffled with Poisson statistic
 			    self._irf,	      # string with IRF root file
 			    deepcopy(self._spline),      # spline with attenuation
+			    self._stats, 	# additional numbers calculated in Root script
 			    self._xMin, 	      # min energy of spline
 			    self._xMax,	      # max energy of spline
 			    kwargs['rebin'],		
@@ -262,7 +271,6 @@ class CTAObsSim(object):
 			                      #(will be integrated in each bin)
 			    kwargs['effOnTime'],
 			    kwargs['size_deg'],
-			    POINTER(c_float)(c_float(self.threshold)),
 			    kwargs['useExtended'],
 			    kwargs['useRandom'],
 			    kwargs['alpha'],
@@ -270,12 +278,19 @@ class CTAObsSim(object):
 			    kwargs['minBkg'],
 			    kwargs['minAeff'],
 			    kwargs['minSig'],
-			    int(kwargs['seed'])
+			    int(kwargs['seedOn']),
+			    int(kwargs['seedOff'])
 			 )
 
-	self.specGr	= cr2py.GraphAsymmErrors2Py(self._specgraph)
-	self.spec	= cr2py.H1D2Py(self._spObserved)
-	self.excess	= cr2py.GraphAsymmErrors2Py(self._excessgraph,xerr = False)
-	self.gamma	= cr2py.H1D2Py(self._gammaExp)
-	self.bkg	= cr2py.H1D2Py(self._bkgExp)
-	return self.spec
+	if success:
+	    self.specGr	= cr2py.GraphAsymmErrors2Py(self._specgraph)
+	    self.spec	= cr2py.H1D2Py(self._spObserved)
+	    self.excess	= cr2py.GraphAsymmErrors2Py(self._excessgraph,xerr = False)
+	    self.gamma	= cr2py.H1D2Py(self._gammaExp)
+	    self.bkg	= cr2py.H1D2Py(self._bkgExp)
+	    self.signifLiMa = self._stats[0]
+	    self.threshold  = self._stats[1]
+	    return self.spec
+	else:
+	    raise RuntimeError("ROOT routine makeCTAspec returned with error.")
+	    return
